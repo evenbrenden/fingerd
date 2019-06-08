@@ -34,10 +34,10 @@ executable fingerd
                      , sqlite-simple
                      , text
 
-executable modify
+executable modifydb
   ghc-options:         -Wall
   hs-source-dirs:      src
-  main-is:             Modify.hs
+  main-is:             ModifyDB.hs
   default-language:    Haskell2010
   other-modules:       FingerdLib
   build-depends:       base >= 4.7 && < 5
