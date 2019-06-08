@@ -42,12 +42,19 @@ CREATE TABLE IF NOT EXISTS users
    realName TEXT, phone TEXT)
 |]
 
--- Will change the id if the user exists, but who cares?
-insertOrReplaceUser :: Query
-insertOrReplaceUser =
-    "INSERT OR REPLACE INTO users\
-    \ (username, shell, homeDirectory, realName, phone)\
-    \ VALUES(?, ?, ?, ?, ?)"
+insertUser :: Query
+insertUser =
+    "INSERT INTO users\
+    \ VALUES(?, ?, ?, ?, ?, ?)"
+
+updateUser :: Query
+updateUser =
+    "UPDATE users SET\
+    \ shell = ?,\
+    \ homeDirectory = ?,\
+    \ realName = ?,\
+    \ phone = ?\
+    \ WHERE username = ?"
 
 allUsers :: Query
 allUsers =
