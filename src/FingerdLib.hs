@@ -85,3 +85,9 @@ getUser conn username = do
         [] -> return $ Nothing
         [user] -> return $ Just user
         _ -> throwIO DuplicateData
+
+dump :: Connection -> IO ()
+dump conn = do
+
+    rows <- query_ conn allUsers
+    mapM_ print (rows :: [User])

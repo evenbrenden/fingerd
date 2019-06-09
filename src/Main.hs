@@ -14,8 +14,35 @@ import Database.SQLite.Simple.Types
 import Network.Socket hiding (recv)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC8
 import Network.Socket.ByteString (recv, sendAll)
 import FingerdLib
+
+-- This one listens for messages from finger (Unix) and queries the DB
+handleQueries :: Connection
+              -> Socket
+              -> IO ()
+handleQueries dbConn sock = forever $ do
+
+    (soc, _) <- accept sock
+    putStrLn "Got connection, handling query"
+
+    handleQuery dbConn soc
+    dump dbConn
+    Network.Socket.close soc
+
+handleQuery :: Connection
+            -> Socket
+            -> IO ()
+handleQuery dbConn soc = do
+
+    msg <- recv soc 1024
+
+    case msg of
+        "\r\n" ->
+            returnUsers dbConn soc
+        name ->
+            returnUser dbConn soc (decodeUtf8 name)
 
 returnUsers :: Connection
             -> Socket
@@ -29,15 +56,6 @@ returnUsers dbConn soc = do
             T.concat $ intersperse "\n" usernames
 
     sendAll soc (encodeUtf8 newlineSeparated)
-
-formatUser :: User -> ByteString
-formatUser (User _ username shell homeDir realName _) =
-    BS.concat
-        ["Login: ", e username, "\t\t\t\t",
-         "Name: ", e realName, "\n",
-         "Directory: ", e homeDir, "\t\t\t",
-         "Shell: ", e shell, "\n"]
-    where e = encodeUtf8
 
 returnUser :: Connection
             -> Socket
@@ -54,63 +72,32 @@ returnUser dbConn soc username = do
             return ()
         Just user -> sendAll soc (formatUser user)
 
-handleQuery :: Connection
-            -> Socket
-            -> IO ()
-handleQuery dbConn soc = do
+formatUser :: User -> ByteString
+formatUser (User _ username shell homeDir realName _) =
+    BS.concat
+        ["Login: ", e username, "\t\t\t\t",
+         "Name: ", e realName, "\n",
+         "Directory: ", e homeDir, "\t\t\t",
+         "Shell: ", e shell, "\n"]
+    where e = encodeUtf8
 
-    msg <- recv soc 1024
-
-    case msg of
-        "\r\n" ->
-            returnUsers dbConn soc
-        name ->
-            returnUser dbConn soc (decodeUtf8 name)
-
-handleQueries :: Connection
+-- This one listens for messages from fingerm and modifies the DB
+handleModifiers :: Connection
               -> Socket
               -> IO ()
-handleQueries dbConn sock = forever $ do
+handleModifiers dbConn sock = forever $ do
 
     (soc, _) <- accept sock
-    putStrLn "Got connection, handling query"
+    putStrLn "Got connection, handling modify"
 
-    handleQuery dbConn soc
+    handleModify dbConn soc
+    dump dbConn
     Network.Socket.close soc
 
-fingerQuery :: IO ()
-fingerQuery = withSocketsDo $ do
-
-    let port = "79"
-    addrinfos <- getAddrInfo
-        (Just (defaultHints
-            {addrFlags =
-                [AI_PASSIVE]}))
-        Nothing (Just port)
-    let serveraddr = head addrinfos
-    sock <- socket
-        (addrFamily serveraddr)
-        Stream defaultProtocol
-    Network.Socket.bind sock (addrAddress serveraddr)
-
-    listen sock 1
-    -- Only one connection open at a time
-    conn <- open "finger.db"
-    handleQueries conn sock
-
-    SQLite.close conn
-    Network.Socket.close sock
-
-dump :: Connection -> IO ()
-dump conn = do
-
-    rows <- query_ conn allUsers
-    mapM_ print (rows :: [User])
-
-handleInsert :: Connection
+handleModify :: Connection
             -> Socket
             -> IO ()
-handleInsert dbConn soc = do
+handleModify dbConn soc = do
 
     msg <- recv soc 1024
     let stripped = T.strip $ decodeUtf8 msg
@@ -122,28 +109,22 @@ handleInsert dbConn soc = do
         case maybeUser of
             Nothing -> do
                 execute dbConn insertUser (Null, username', shell', homeDirectory', realName', phone')
-                dump dbConn
+                sendAll soc (BS.concat [ "Inserted user ", encodeUtf8 username'])
             Just _ -> do
                 execute dbConn updateUser (shell', homeDirectory', realName', phone', username')
-                dump dbConn
-    else
-        putStrLn $ mconcat [ "Received ", show msg, ", need \"[username],[shell],[home directory],[real name],[phone]\\r\\n\"" ]
+                sendAll soc (BS.concat [ "Updated user ", encodeUtf8 username'])
+    else do
+        let reply = BS.concat [ "Received \"", msg, "\", need \"username,shell,home directory,real name,phone\"" ]
+        sendAll soc reply
+        BSC8.putStrLn reply
 
-handleInserts :: Connection
-              -> Socket
-              -> IO ()
-handleInserts dbConn sock = forever $ do
+-- This one does both and is the program that is fingerd
+type Handler = Connection -> Socket -> IO ()
+type Port = String
 
-    (soc, _) <- accept sock
-    putStrLn "Got connection, handling insert"
+runHandler :: Handler -> Port -> IO ()
+runHandler handler port = withSocketsDo $ do
 
-    handleInsert dbConn soc
-    Network.Socket.close soc
-
-fingerInsert :: IO ()
-fingerInsert = withSocketsDo $ do
-
-    let port = "80"
     addrinfos <- getAddrInfo
         (Just (defaultHints
             {addrFlags =
@@ -155,13 +136,15 @@ fingerInsert = withSocketsDo $ do
         Stream defaultProtocol
     Network.Socket.bind sock (addrAddress serveraddr)
 
-    listen sock 1
     -- Only one connection open at a time
+    listen sock 1
     conn <- open "finger.db"
-    handleInserts conn sock
+    handler conn sock
 
     SQLite.close conn
     Network.Socket.close sock
 
 main :: IO ()
-main = fingerInsert
+main = do
+    -- runHandler handleModifiers "80"
+    runHandler handleQueries "79"
