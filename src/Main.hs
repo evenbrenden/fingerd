@@ -16,6 +16,7 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC8
 import Network.Socket.ByteString (recv, sendAll)
+import Control.Concurrent
 import FingerdLib
 
 -- This one listens for messages from finger (Unix) and queries the DB
@@ -146,5 +147,5 @@ runHandler handler port = withSocketsDo $ do
 
 main :: IO ()
 main = do
-    -- runHandler handleModifiers "80"
+    _ <- forkIO $ runHandler handleModifiers "80"
     runHandler handleQueries "79"

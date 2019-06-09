@@ -22,7 +22,7 @@ executable debug
                      , network
 
 executable fingerd
-  ghc-options:         -Wall
+  ghc-options:         -Wall -threaded -rtsopts -with-rtsopts=-N
   hs-source-dirs:      src
   main-is:             Main.hs
   default-language:    Haskell2010
