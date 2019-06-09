@@ -145,7 +145,15 @@ runHandler handler port = withSocketsDo $ do
     SQLite.close conn
     Network.Socket.close sock
 
+forkIO' :: IO () -> IO (MVar ())
+forkIO' theThingToDo = do
+    doneSignal <- newEmptyMVar
+    _ <- forkFinally theThingToDo (\_ -> putMVar doneSignal ())
+    return doneSignal
+
 main :: IO ()
 main = do
-    _ <- forkIO $ runHandler handleModifiers "80"
+    queThread <- forkIO' $ runHandler handleQueries "79"
+    modThread <- forkIO' $ runHandler handleModifiers "80"
+    mapM_ takeMVar [queThread, modThread]
     runHandler handleQueries "79"
