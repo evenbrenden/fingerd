@@ -23,32 +23,32 @@ import FingerdLib
 handleQueries :: Connection
               -> Socket
               -> IO ()
-handleQueries dbConn sock = forever $ do
+handleQueries dbConn server_sock = forever $ do
 
-    (soc, _) <- accept sock
+    (client_sock, _) <- accept server_sock
     putStrLn "Got connection, handling query"
 
-    handleQuery dbConn soc
+    handleQuery dbConn client_sock
     dump dbConn
-    Network.Socket.close soc
+    Network.Socket.close client_sock
 
 handleQuery :: Connection
             -> Socket
             -> IO ()
-handleQuery dbConn soc = do
+handleQuery dbConn client_sock = do
 
-    msg <- recv soc 1024
+    msg <- recv client_sock 1024
 
     case msg of
         "\r\n" ->
-            returnUsers dbConn soc
+            returnUsers dbConn client_sock
         name ->
-            returnUser dbConn soc (decodeUtf8 name)
+            returnUser dbConn client_sock (decodeUtf8 name)
 
 returnUsers :: Connection
             -> Socket
             -> IO ()
-returnUsers dbConn soc = do
+returnUsers dbConn client_sock = do
 
     rows <- query_ dbConn allUsers
 
@@ -56,13 +56,13 @@ returnUsers dbConn soc = do
         newlineSeparated =
             T.concat $ intersperse "\n" usernames
 
-    sendAll soc (encodeUtf8 newlineSeparated)
+    sendAll client_sock (encodeUtf8 newlineSeparated)
 
 returnUser :: Connection
             -> Socket
             -> Text
             -> IO ()
-returnUser dbConn soc username = do
+returnUser dbConn client_sock username = do
 
     maybeUser <- getUser dbConn (T.strip username)
 
@@ -71,7 +71,7 @@ returnUser dbConn soc username = do
             putStrLn
                 ("Couldn't find matching userfor username: " ++ (show username))
             return ()
-        Just user -> sendAll soc (formatUser user)
+        Just user -> sendAll client_sock (formatUser user)
 
 formatUser :: User -> ByteString
 formatUser (User _ username shell homeDir realName _) =
@@ -86,21 +86,21 @@ formatUser (User _ username shell homeDir realName _) =
 handleModifiers :: Connection
               -> Socket
               -> IO ()
-handleModifiers dbConn sock = forever $ do
+handleModifiers dbConn server_sock = forever $ do
 
-    (soc, _) <- accept sock
+    (client_sock, _) <- accept server_sock
     putStrLn "Got connection, handling modify"
 
-    handleModify dbConn soc
+    handleModify dbConn client_sock
     dump dbConn
-    Network.Socket.close soc
+    Network.Socket.close client_sock
 
 handleModify :: Connection
             -> Socket
             -> IO ()
-handleModify dbConn soc = do
+handleModify dbConn client_sock = do
 
-    msg <- recv soc 1024
+    msg <- recv client_sock 1024
     let stripped = T.strip $ decodeUtf8 msg
     let fields = T.split (== ',') stripped
     if (length fields == 5) then do
@@ -110,13 +110,13 @@ handleModify dbConn soc = do
         case maybeUser of
             Nothing -> do
                 execute dbConn insertUser (Null, username', shell', homeDirectory', realName', phone')
-                sendAll soc (BS.concat [ "Inserted user ", encodeUtf8 username'])
+                sendAll client_sock (BS.concat [ "Inserted user ", encodeUtf8 username'])
             Just _ -> do
                 execute dbConn updateUser (shell', homeDirectory', realName', phone', username')
-                sendAll soc (BS.concat [ "Updated user ", encodeUtf8 username'])
+                sendAll client_sock (BS.concat [ "Updated user ", encodeUtf8 username'])
     else do
         let reply = BS.concat [ "Received \"", msg, "\", need \"username,shell,home directory,real name,phone\"" ]
-        sendAll soc reply
+        sendAll client_sock reply
         BSC8.putStrLn reply
 
 -- This one does both and is the program that is fingerd
@@ -132,18 +132,18 @@ runHandler handler port = withSocketsDo $ do
                 [AI_PASSIVE]}))
         Nothing (Just port)
     let serveraddr = head addrinfos
-    sock <- socket
+    server_sock <- socket
         (addrFamily serveraddr)
         Stream defaultProtocol
-    Network.Socket.bind sock (addrAddress serveraddr)
+    Network.Socket.bind server_sock (addrAddress serveraddr)
 
     -- Only one connection open at a time
-    listen sock 1
+    listen server_sock 1
     conn <- open "finger.db"
-    handler conn sock
+    handler conn server_sock
 
     SQLite.close conn
-    Network.Socket.close sock
+    Network.Socket.close server_sock
 
 forkIO' :: IO () -> IO (MVar ())
 forkIO' theThingToDo = do
