@@ -2,7 +2,7 @@ name:                fingerd
 version:             0.1.0.0
 -- synopsis:
 -- description:
-homepage:            https://github.com/githubuser/fingerd#readme
+homepage:            https://github.com/evenbrenden/fingerd#readme
 license:             BSD3
 license-file:        LICENSE
 author:              Even Brenden
