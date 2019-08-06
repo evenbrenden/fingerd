@@ -1,1 +1,1 @@
-fingerd exercise from Haskell Programming From First Principles (haskellbook.com).
+fingerd exercise from [Haskell Programming From First Principles](http://www.haskellbook.com).
